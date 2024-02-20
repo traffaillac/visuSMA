@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang=fr>
+<head>
+	<meta charset=utf-8>
+	<title>Pastofutur</title>
+	<link rel=stylesheet href=normalize.min.css>
+	<link rel=stylesheet href=leaflet.css>
+	<link rel=stylesheet href=jsoneditor.min.css>
+	<script src=leaflet.js></script>
+	<script src=elementOverlay.js></script>
+	<script src=jsoneditor-minimalist.min.js></script>
+	<script src=modele.js></script>
+	<style>
+		*,*::before,*::after {box-sizing: border-box}
+		canvas { image-rendering: pixelated; opacity: .6 }
+		h1 { font: bold 16px Tahoma; margin: 16px 0 12px 0; text-align: center }
+		h1 input { appearance: none; width: 20px; aspect-ratio: 1/1; vertical-align: text-top }
+		input[type=color] { width: 25px; height: 25px; cursor: pointer; border-radius: 6px }
+		label { font: 10px Tahoma }
+		.espace { display: none }
+		.espace+span { display: flex; align-items: center; justify-content: center; font: bold 18px Tahoma; width: 70%; aspect-ratio: 1/1; margin: 5% auto; background-color: aliceblue; border-radius: 50%; cursor: pointer; vertical }
+		.espace:checked+span {width: 80%; margin: 0 auto; border-radius: 30%; background: skyblue }
+		.carte { margin-bottom: 6px }
+		.carte input { appearance: none; width: 80px; height: 80px; margin: 0; border-radius: 10%; background-size: contain }
+		.carte input:checked { border: 3px solid dodgerblue }
+		.calque { margin-bottom: 6px }
+		.calque input { appearance: none; width: 50px; height: 50px; margin: 0; border-radius: 10%; background-size: contain }
+		.calque input:checked { border: 3px solid dodgerblue }
+		.simulation { border-top: 1px solid lightgrey; cursor: pointer; user-select: none }
+		.simulation input { margin: 14px 8px }
+		.flexcolcenter,.flexcolstretch { display: flex; flex-flow: column nowrap; }
+		.flexrowcenter,.flexrowstretch { display: flex; flex-flow: row nowrap; }
+		.flexcolcenter,.flexrowcenter { align-items: center }
+		.flexcolstretch,.flexrowstretch { align-items: stretch }
+	</style>
+</head>
+<!-- Base technique initiale pour Pastofutur :
+	* un fond de carte avec sélecteur de type de vue
+	* un ou plusieurs sélecteurs d'éléments graphiques à superposer (cases à cocher)
+	* une liste déroulante des processus à exécuter lors de chaque itération
+	* un slider pour choisir l'année
+	* une légende pour indiquer le sens de chaque élément visuel
+	* système de logging de données d'utilisation
+-->
+<!-- MAYDO :
+	* demander à Jacques/Imad une carte de cadastre
+	* permette l'ajout de ce type de carte aux overlays
+	* mettre le modèle en overlay
+	* faire tourner le modèle en prenant en compte les processus activés
+	* uploader sur un serveur pythonanywhere, en même temps qu'un système de logging
+	
+	* poignée pour déplacer le séparateur options/carte en x
+	* Intégrer la température dans la simulation et représenter son augmentation dans le futur, visualiser le niveau d'adéquation température-arbres.
+	* On doit pouvoir visualiser sur un screenshot un scénario proposé d'actions sur les espaces.
+	* Le but central étant de représenter les points de vue, le modèle ne doit pas nécessairement coller à la réalité, mais surtout coller au modèle mental des personnes.
+	* Interroger différents utilisateurs sur leur perception du futur et leurs problèmes/besoins sur ce sujet.
+-->
+<body class=flexrowstretch style="margin: 0; width: 100vw; height: 100vh">
+	<div class=flexcolstretch style="width: 70px; padding: 6px 0; background-color: gainsboro">
+		<label><input type=radio name=espace class=espace checked><span>S1</span></label>
+		<label><input type=radio name=espace class=espace><span>S2</span></label>
+		<label><input type=radio name=espace class=espace><span>S3</span></label>
+		<label><input type=button class=espace><span style="font-size: 24px; background-color: linen">+</span></label>
+	</div>
+	<div class=flexcolstretch style="width: 270px; border-right: 1px solid lightgrey; overflow: scroll">
+		<h1>Fonds de carte<!-- <input type=image src=images/gear.png>--></h1>
+		<div style="display: flex; flex-flow: row wrap; justify-content: space-evenly">
+			<div class="flexcolcenter carte">
+				<input type=radio name=carte id=inp_topo1 checked onchange="chg_carte(topo1)" style="background-image: url(images/topo1.png)">
+				<label for=inp_topo1>Topographie 1</label>
+			</div>
+			<div class="flexcolcenter carte">
+				<input type=radio name=carte id=inp_topo2 onchange="chg_carte(topo2)" style="background-image: url(images/topo2.png)">
+				<label for=inp_topo2>Topographie 2</label>
+			</div>
+			<div class="flexcolcenter carte">
+				<input type=radio name=carte id=inp_topo3 onchange="chg_carte(topo3)" style="background-image: url(images/topo3.png)">
+				<label for=inp_topo3>Topographie 3</label>
+			</div>
+			<div class="flexcolcenter carte">
+				<input type=radio name=carte id=inp_street1 onchange="chg_carte(street1)" style="background-image: url(images/street1.png)">
+				<label for=inp_street1>Rues 1</label>
+			</div>
+			<div class="flexcolcenter carte">
+				<input type=radio name=carte id=inp_street2 onchange="chg_carte(street2)" style="background-image: url(images/street2.png)">
+				<label for=inp_street2>Rues 2</label>
+			</div>
+			<div class="flexcolcenter carte">
+				<input type=radio name=carte id=inp_sat1 onchange="chg_carte(sat1)" style="background-image: url(images/sat1.png)">
+				<label for=inp_sat1>Satellite 1</label>
+			</div>
+			<div class="flexcolcenter carte">
+				<input type=radio name=carte id=inp_sat2 onchange="chg_carte(sat2)" style="background-image: url(images/sat2.png)">
+				<label for=inp_sat2>Satellite 2</label>
+			</div>
+			<div class="flexcolcenter carte">
+				<input type=radio name=carte id=inp_art onchange="chg_carte(art)" style="background-image: url(images/art.png)">
+				<label for=inp_art>Aquarelle</label>
+			</div>
+		</div>
+		
+		<h1>Calques<!-- <input type=image src=images/gear.png>--></h1>
+		<div style="display: flex; flex-flow: row wrap; padding: 0 2px; justify-content: space-evenly">
+			<div class="flexcolcenter calque">
+				<input type=checkbox id=inp_cadastre onchange="chg_calque(overlay_cadastre, this.checked)" style="background-image: url(images/cadastre.jpeg)">
+				<label for=inp_cadastre>Cadastre</label>
+			</div>
+			<div class="flexcolcenter calque">
+				<input type=checkbox id=inp_rando onchange="chg_calque(overlay_rando, this.checked)" style="background-image: url(images/rando.jpeg)">
+				<label for=inp_rando>Rando</label>
+			</div>
+			<div class="flexcolcenter calque">
+				<input type=checkbox id=inp_velo onchange="chg_calque(overlay_velo, this.checked)" style="background-image: url(images/velo.jpeg)">
+				<label for=inp_velo>Vélo</label>
+			</div>
+			<div class="flexcolcenter calque">
+				<input type=checkbox id=inp_ski onchange="chg_calque(overlay_ski, this.checked)" style="background-image: url(images/ski.png)">
+				<label for=inp_ski>Ski</label>
+			</div>
+		</div>
+		
+		<h1>Eléments de simulation<!-- <input type=image src=images/gear.png>--></h1>
+		<button onclick="div_overlay.style.display='block'" style="align-self: center; font: 10px Tahoma; margin: 14px 0">Paramètres d'initialisation</button>
+		<div style="text-align: center; padding: 9px 0; border-top: 1px solid lightgrey">
+			<select id=sel_colorInfo onchange="maj_canvas()" style="vertical-align: text-top; font: 10px Tahoma">
+				<option value=gbiomass>biomasse pâturable</option>
+				<option value=lbiomass>accessibilité forestière</option>
+				<option value=tbiomass>densité forestière</option>
+				<option value=soilC>carbone dans le sol</option>
+				<option value=nutrient>azote dans le sol</option>
+				<option value=water>risque d'incendie</option>
+				<option value=dung>densité de gibier</option>
+				<option value=livestock>présence de loups</option>
+				<option value=gazEmission>attractivité touristique</option>
+			</select>
+			<input type=color id=inp_patch_color onchange="maj_couleur()">
+		</div>
+		<label class="flexrowcenter simulation">
+			<input type=checkbox id=chk_env_nutrient checked onchange="maj_modele()">Pâturage éleveuse/éleveur 1
+		</label>
+		<label class="flexrowcenter simulation">
+			<input type=checkbox id=chk_prod_fertilization checked onchange="maj_modele()">Pâturage éleveuse/éleveur 2
+		</label>
+		<label class="flexrowcenter simulation">
+			<input type=checkbox id=chk_env_biomass checked onchange="maj_modele()">Pâturage éleveuse/éleveur 3
+		</label>
+		<label class="flexrowcenter simulation">
+			<input type=checkbox id=chk_prod_feed checked onchange="maj_modele()">Pâturage éleveuse/éleveur 4
+		</label>
+		<label class="flexrowcenter simulation">
+			<input type=checkbox id=chk_prod_transformation checked onchange="maj_modele()">Pâturage éleveuse/éleveur 5
+		</label>
+		<label class="flexrowcenter simulation">
+			<input type=checkbox id=chk_prod_milk checked onchange="maj_modele()">Coupes d'exploitation forestière
+		</label>
+		<label class="flexrowcenter simulation">
+			<input type=checkbox id=chk_prod_cattle checked onchange="maj_modele()">Régénération forestière
+		</label>
+		<label class="flexrowcenter simulation">
+			<input type=checkbox id=chk_prod_meat checked onchange="maj_modele()">Eclaircissements forestiers
+		</label>
+		<label class="flexrowcenter simulation">
+			<input type=checkbox id=chk_prod_gaz checked onchange="maj_modele()">Coupes de prévention des incendies
+		</label>
+		<label class="flexrowcenter simulation">
+			<input type=checkbox id=chk_env_water checked onchange="maj_modele()">Activités de chasse
+		</label>
+		<label class="flexrowcenter simulation">
+			<input type=checkbox id=chk_env_carbon checked onchange="maj_modele()">Randonnées et pratiquants récréatifs
+		</label>
+		<label class="flexrowcenter simulation">
+			<input type=checkbox id=chk_env_gaz checked onchange="maj_modele()">Aménagements du territoire
+		</label>
+	</div>
+	<div style="position: relative; width: calc(100% - 340px); height: 100%">
+		<div id=map style="width: 100%; height: 100%"></div>
+		<input id=rng_annee type=range min=0 max=9 value=0 oninput="maj_canvas()" style="position: absolute; width: calc(100% - 400px); z-index: 1000; bottom: 22px; left: 0; right: 0; margin: 0 auto">
+	</div>
+	<div id="div_overlay" style="position: absolute; display: none; background-color: rgba(0,0,0,.5); width: 100vw; height: 100vh; z-index: 1000" onclick="maj_editeur()">
+		<div id=div_editeur style="height: 100%; width: 500px; margin: auto" onclick="event.stopPropagation()"></div>
+	</div>
+	
+	<script>
+// paramètres de la simulation
+let globals = {
+	// simulation parameters
+	plotSurface: 1,
+	seasons: {bad: 400, medium: 600, good: 1_000},
+	initialWater: 250_000,
+	// scenarization parameters
+	clCropSurface: 50,
+	clAgroforestrySurface: 20,
+	clGrassSurface: 900,
+	clForageSurface: 400,
+	clSylvopastoralgSurface: 800,
+	clSylvopastoralfSurface: 400,
+	sharedMilkery: false,
+	sharedSlaughterhouse: false,
+	milkeryContribution: 500,
+	slaughterContribution: 500,
+	// production unit parameters
+	productionUnitNumber: 9,
+	cropSurface: 10,
+	agroforestrySurface: 10,
+	grassSurface: 150,
+	forageSurface: 10,
+	sylvopastoralgSurface: 50,
+	sylvopastoralfSurface: 10,
+	livestockSize: 20,
+	initialCash: 1_000,
+	fertilizer: 0,
+	cropFertilization: 50,
+	grassFertilization: 30,
+	forageFertilization: 20,
+	feed: 10,
+	pasture: 60,
+	leaf: 10,
+	residue: 10,
+	forage: 10,
+	rawMilk: 20,
+	processedMilk: 20,
+	milkeryMilk: 20,
+	liveAnimal: 40,
+	carcass: 40,
+	shAnimal: 20,
+	// biophysical parameters
+	tree2lbiomass: 10.5,
+	tree2tbiomass: 40.0,
+	ewc: 80,
+	bwc: 915,
+	Nfixation: 7.5,
+	glbiomass2N: 0.15,
+	flbiomass2N: 0.15,
+	llbiomass2N: 0.15,
+	livestock2N: 0.15,
+	cEmission: 17,
+	glbiomass2C: 0.5,
+	flbiomass2C: 0.5,
+	llbiomass2C: 0.47,
+	livestock2C: 0.4,
+	gmineralization: 25,
+	fmineralization: 25,
+	lmineralization: 60,
+	dmineralization: 50,
+	// gaz emission dynamics
+	f1: 0.082,
+	f2: 0.028,
+	c2co2: 3.67,
+	co2: 1,
+	ch4toco2: 34,
+	n2otoco2: 296,
+	// zootechnical parameters
+	relativeBiomassNeed: 2.5,
+	metabolicWeightRatio: 75,
+	grassKg2ufl: 1_232,
+	forageKg2ufl: 1_232,
+	leafKg2ufl: 880,
+	residueKg2ufl: 880,
+	feedKg2ufl: 1_408,
+	grassKg2N: 90,
+	forageKg2N: 90,
+	leafKg2N: 30,
+	residueKg2N: 30,
+	feedKg2N: 100,
+	UFLPerLiter: 0.4,
+	NPerLiter: 70,
+	grassOm: 92.92,
+	forageOm: 92.92,
+	leafOm: 90.21,
+	residueOm: 90.21,
+	feedOm: 99.0,
+	grassDigestibility: 53.28,
+	forageDigestibility: 53.28,
+	leafDigestibility: 53.18,
+	residueDigestibility: 53.18,
+	feedDigestibility: 90.0,
+	manureCh4Emission: 17,
+	manureN2oEmission: 2.99,
+	feedPrice: 10,
+	fertilizerPrice: 6,
+	milkPrice: 4,
+	diaryPrice: 20,
+	cowPrice: 300,
+	meatPrice: 600,
+	maleClasses: {
+		young: {minage: 0, maxage: 1, weight: 100, UFLm: 438, Nm: 54_750, mortality: 13, slaughtering: 0},
+		subadult: {minage: 2, maxage: 3, weight: 250, UFLm: 1_095, Nm: 136_875, mortality: 5, slaughtering: 0},
+		adult: {minage: 4, maxage: 10, weight: 250, UFLm: 1_095, Nm: 136_875, mortality: 3, slaughtering: 0}
+	},
+	femaleClasses: {
+		young: {minage: 0, maxage: 1, weight: 100, UFLm: 438, Nm: 54_750, mortality: 15, slaughtering: 0, fecundity: 0},
+		subadult: {minage: 2, maxage: 3, weight: 250, UFLm: 1_095, Nm: 136_875, mortality: 5, slaughtering: 0, fecundity: 0},
+		adult: {minage: 4, maxage: 15, weight: 250, UFLm: 1_095, Nm: 136_875, mortality: 3, slaughtering: 0, fecundity: 0.5}
+	}
+}
+
+// définition des fonds de carte (https://leaflet-extras.github.io/leaflet-providers/preview/)
+var topo1 = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {zIndex: 0, maxZoom: 17, attribution: '© OpenTopoMap'})
+var topo2 = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', {zIndex: 0, attribution: '© Esri'})
+var topo3 = L.tileLayer('https://wxs.ign.fr/{apikey}/geoportail/wmts?REQUEST=GetTile&SERVICE=WMTS&VERSION=1.0.0&STYLE={style}&TILEMATRIXSET=PM&FORMAT={format}&LAYER=GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}', {zIndex: 0, attribution: '© Geoportail France', bounds: [[-75, -180], [81, 180]], minZoom: 2, maxZoom: 18, apikey: 'choisirgeoportail', format: 'image/png', style: 'normal'})
+var street1 = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {zIndex: 0, maxZoom: 19, attribution: '© OpenStreetMap'})
+var street2 = L.tileLayer('https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png', {zIndex: 0, maxZoom: 20, attribution: '© OpenStreetMap France'})
+var sat1 = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {zIndex: 0, attribution: '© Esri'})
+var sat2 = L.tileLayer('https://wxs.ign.fr/{apikey}/geoportail/wmts?REQUEST=GetTile&SERVICE=WMTS&VERSION=1.0.0&STYLE={style}&TILEMATRIXSET=PM&FORMAT={format}&LAYER=ORTHOIMAGERY.ORTHOPHOTOS&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}', {zIndex: 0, attribution: '© Geoportail France', bounds: [[-75, -180], [81, 180]], minZoom: 2, maxZoom: 19, apikey: 'choisirgeoportail', format: 'image/jpeg', style: 'normal'})
+var art = L.tileLayer('https://stamen-tiles-{s}.a.ssl.fastly.net/watercolor/{z}/{x}/{y}.{ext}', {zIndex: 0, attribution: '© Stamen Design', subdomains: 'abcd', minZoom: 1, maxZoom: 16, ext: 'jpg'})
+
+// définition des overlays
+let z = 0
+var overlay_cadastre = L.tileLayer('https://wxs.ign.fr/{apikey}/geoportail/wmts?REQUEST=GetTile&SERVICE=WMTS&VERSION=1.0.0&STYLE={style}&TILEMATRIXSET=PM&FORMAT={format}&LAYER=CADASTRALPARCELS.PARCELLAIRE_EXPRESS&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}', {zIndex: ++z, attribution: '© Geoportail France', bounds: [[-75, -180], [81, 180]], minZoom: 2, maxZoom: 20, apikey: 'choisirgeoportail', format: 'image/png', style: 'PCI vecteur'})
+var overlay_rando = L.tileLayer('https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png', {zIndex: ++z, maxZoom: 18, attribution: '© OpenStreetMap, waymarkedtrails.org'})
+var overlay_velo = L.tileLayer('https://tile.waymarkedtrails.org/mtb/{z}/{x}/{y}.png', {zIndex: ++z, maxZoom: 18, attribution: 'Map data: © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors | Map style: © <a href="https://waymarkedtrails.org">waymarkedtrails.org</a> (<a href="https://creativecommons.org/licenses/by-sa/3.0/">CC-BY-SA</a>)'})
+var overlay_ski = L.tileLayer('https://tiles.opensnowmap.org/pistes/{z}/{x}/{y}.png', {zIndex: ++z, minZoom: 9, maxZoom: 18, attribution: 'Map data: © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors & ODbL, © <a href="https://www.opensnowmap.org/iframes/data.html">www.opensnowmap.org</a> <a href="https://creativecommons.org/licenses/by-sa/2.0/">CC-BY-SA</a>'})
+
+// couleurs des différents types de caractéristiques affichables
+let patch_colors = {
+	gbiomass: [143, 188, 143],
+	lbiomass: [255, 105, 180],
+	tbiomass: [34, 139, 34],
+	soilC: [0, 0, 0],
+	nutrient: [30, 144, 255],
+	water: [255, 69, 0],
+	dung: [160, 82, 45],
+	livestock: [70, 130, 180],
+	gazEmission: [255, 140, 0],
+}
+
+// leaflet
+let map = L.map("map").setView([44.0240017,6.3553425], 14);
+L.control.scale({imperial: false, maxWidth: 200}).addTo(map)
+map.addLayer(topo1)
+var layer_carte = topo1
+
+// overlay pour la simulation
+let {canvas, snapshots} = executer_modele(globals, 10)
+let ctx = canvas.getContext("2d")
+let overlay_canvas = L.elementOverlay(canvas, [[44.0040017, 6.3353425], [44.0240017, 6.3553425]], {zIndex: ++z}).addTo(map)
+maj_canvas()
+
+// initialisation de l'éditeur JSON
+const jsoneditor = new JSONEditor(div_editeur, {mode: 'form', name: 'paramètres', maxVisibleChilds: 1000})
+jsoneditor.set(globals)
+
+function chg_carte(tile_layer) {
+	map.removeLayer(layer_carte)
+	map.addLayer(tile_layer)
+	layer_carte = tile_layer
+}
+function chg_calque(tile_layer, checked) {
+	if (checked)
+		map.addLayer(tile_layer)
+	else
+		map.removeLayer(tile_layer)
+}
+function maj_canvas() {
+	let image = snapshots[rng_annee.value][sel_colorInfo.value];
+	let [r, g, b] = patch_colors[sel_colorInfo.value];
+	inp_patch_color.value = "#"+(1<<24|r<<16|g<<8|b).toString(16).slice(1)
+	for (let i = 0; i < canvas.width * canvas.height * 4; i += 4) {
+		image.data[i    ] = r;
+		image.data[i + 1] = g;
+		image.data[i + 2] = b;
+	}
+	ctx.putImageData(image, 0, 0)
+}
+function maj_couleur() {
+	let hex = inp_patch_color.value;
+	let r = parseInt(hex.substr(1, 2), 16);
+	let g = parseInt(hex.substr(3, 2), 16);
+	let b = parseInt(hex.substr(5, 2), 16);
+	patch_colors[sel_colorInfo.value] = [r, g, b];
+	maj_canvas()
+}
+function maj_modele() {
+	snapshots = executer_modele(globals, 10).snapshots
+	maj_canvas()
+}
+function maj_editeur() {
+	div_overlay.style.display = 'none';
+	globals = jsoneditor.get()
+	maj_modele();
+}
+	</script>
+</body>
+</html>
